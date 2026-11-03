@@ -6,37 +6,36 @@ A production-ready platform for orchestrating distributed Ray workloads, entity 
 
 ## 1. High-Level Architecture Diagram
 
-```mermaid
 graph TD
-    subgraph CI_CD [GitHub Actions CI/CD]
-        PR[Pull Request] -->|Triggers| TF_Plan[Terraform Plan]
-        Merge[Merge to main] -->|terraform/** changed| TF_Apply[Terraform Apply]
-        Manual Trigger (workflow_dispatch) -->|Deploy Image & Job| ECR[Build & Push to ECR]
-        ECR -->|Apply Manifests| K8s_API[EKS Kubernetes API]
+    subgraph CI_CD ["GitHub Actions CI/CD"]
+        PR["Pull Request"] -->|Triggers| TF_Plan["Terraform Plan"]
+        Merge["Merge to main"] -->|"terraform/** changed"| TF_Apply["Terraform Apply"]
+        Manual["Manual Trigger (workflow_dispatch)"] -->|"Deploy Image & Job"| ECR["Build & Push to ECR"]
+        ECR -->|Apply Manifests| K8s_API["EKS Kubernetes API"]
     end
 
-    subgraph AWS_Cloud [AWS Cloud]
-        subgraph VPC [Amazon VPC 10.0.0.0/16]
-            subgraph EKS [Amazon EKS Cluster]
-                KubeRay[KubeRay Operator] -->|Manages Lifecycle| RayJob_CRD[RayJob: ray-entity-resolution]
+    subgraph AWS_Cloud ["AWS Cloud"]
+        subgraph VPC ["Amazon VPC 10.0.0.0/16"]
+            subgraph EKS ["Amazon EKS Cluster"]
+                KubeRay["KubeRay Operator"] -->|Manages Lifecycle| RayJob_CRD["RayJob: ray-entity-resolution"]
 
-                subgraph NodeGroup_System [System Pool - On-Demand]
-                    RayHead[Ray Head Pod]
+                subgraph NodeGroup_System ["System Pool - On-Demand"]
+                    RayHead["Ray Head Pod"]
                 end
 
-                subgraph NodeGroup_Spot [Worker Pool - Spot Instances]
-                    RayWorker1[Ray Worker: Data Ingestion]
-                    RayWorker2[Ray Worker: ML Training]
+                subgraph NodeGroup_Spot ["Worker Pool - Spot Instances"]
+                    RayWorker1["Ray Worker: Data Ingestion"]
+                    RayWorker2["Ray Worker: ML Training"]
                 end
 
-                subgraph NodeGroup_Specialized [Specialized Pool - On-Demand]
-                    RayActor[EntityResolver LLM Actor]
+                subgraph NodeGroup_Specialized ["Specialized Pool - On-Demand"]
+                    RayActor["EntityResolver LLM Actor"]
                 end
             end
 
-            subgraph Storage_Data [Storage & Catalog Layer]
-                S3[Amazon S3: Iceberg Warehouse]
-                Glue[AWS Glue Data Catalog]
+            subgraph Storage_Data ["Storage & Catalog Layer"]
+                S3["Amazon S3: Iceberg Warehouse"]
+                Glue["AWS Glue Data Catalog"]
             end
         end
     end
@@ -47,8 +46,6 @@ graph TD
     RayHead --> RayActor
     RayWorker1 -->|Read & Write| S3
     RayWorker2 -->|Schema & Metadata Updates| Glue
-```
-
 ---
 
 ## 2. Setup & Deployment Instructions
