@@ -1,0 +1,33 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - 'terraform/**'
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/github-actions-tf-role
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.0
+
+      - name: Init and Plan
+        run: |
+          cd terraform
+          terraform init
+          terraform plan

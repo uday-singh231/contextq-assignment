@@ -1,0 +1,64 @@
+name: Build Image and Deploy RayJob
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target deployment environment'
+        required: true
+        default: 'dev'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/github-actions-deploy-role
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Docker Image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ray-ai-platform
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG -t $REGISTRY/$REPOSITORY:latest .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY/$REPOSITORY:latest
+
+      - name: Update Kubeconfig
+        run: |
+          aws eks update-kubeconfig --region us-east-1 --name dev-ray-eks
+
+      - name: Install or Upgrade KubeRay Operator
+        run: |
+          helm repo add kuberay https://ray-project.github.io/kuberay-helm/
+          helm repo update
+          helm upgrade --install kuberay-operator kuberay/kuberay-operator --namespace kuberay-system --create-namespace
+
+      - name: Deploy Kubernetes Manifests
+        run: |
+          kubectl apply -f k8s/secret.yaml
+
+          # Substitute dynamic variables
+          sed -i "s|<REPLACE_WITH_RAY_IRSA_ROLE_ARN>|arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/dev-ray-pod-irsa-role|g" k8s/service-account.yaml
+          kubectl apply -f k8s/service-account.yaml
+
+          sed -i "s|<ACCOUNT_ID>|${{ secrets.AWS_ACCOUNT_ID }}|g" k8s/rayjob.yaml
+          sed -i "s|<REPLACE_WITH_S3_BUCKET_NAME>|dev-ray-iceberg-${{ secrets.AWS_ACCOUNT_ID }}|g" k8s/rayjob.yaml
+
+          # Re-apply job
+          kubectl delete rayjob ray-entity-resolution --ignore-not-found=true
+          kubectl apply -f k8s/rayjob.yaml

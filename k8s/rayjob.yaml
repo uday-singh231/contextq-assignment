@@ -1,0 +1,113 @@
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: ray-entity-resolution
+  namespace: default
+spec:
+  entrypoint: python /app/ray_pipeline.py
+  shutdownAfterJobFinishes: true
+  ttlSecondsAfterFinished: 300
+
+  rayClusterSpec:
+    rayVersion: "2.38.0"
+    headGroupSpec:
+      serviceAccountName: ray-sa
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        num-cpus: "0"
+      template:
+        spec:
+          nodeSelector:
+            node-role: system
+          containers:
+            - name: ray-head
+              image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ray-ai-platform:latest
+              imagePullPolicy: Always
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: "4Gi"
+                requests:
+                  cpu: "1"
+                  memory: "2Gi"
+              volumeMounts:
+                - mountPath: /dev/shm
+                  name: dshm
+          volumes:
+            - name: dshm
+              emptyDir:
+                medium: Memory
+                sizeLimit: 1Gi
+
+    workerGroupSpecs:
+      # General Batch Worker Pool (Runs on Spot Nodes)
+      - groupName: batch-workers
+        replicas: 2
+        minReplicas: 1
+        maxReplicas: 4
+        rayStartParams: {}
+        template:
+          spec:
+            nodeSelector:
+              node-role: ray-worker
+            tolerations:
+              - key: "ray-worker"
+                operator: "Exists"
+                effect: "PreferNoSchedule"
+            containers:
+              - name: ray-worker
+                image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ray-ai-platform:latest
+                env:
+                  - name: S3_BUCKET_NAME
+                    value: "<REPLACE_WITH_S3_BUCKET_NAME>"
+                resources:
+                  limits:
+                    cpu: "2"
+                    memory: "4Gi"
+                  requests:
+                    cpu: "1"
+                    memory: "2Gi"
+                volumeMounts:
+                  - mountPath: /dev/shm
+                    name: dshm
+            volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+                  sizeLimit: 2Gi
+
+      # Dedicated Worker for EntityResolver Actor
+      - groupName: actor-workers
+        replicas: 1
+        minReplicas: 1
+        maxReplicas: 2
+        rayStartParams:
+          resources: '{"resolver_node": 1}'
+        template:
+          spec:
+            nodeSelector:
+              node-role: specialized-actor
+            containers:
+              - name: ray-worker-actor
+                image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ray-ai-platform:latest
+                env:
+                  - name: LLM_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: ray-secrets
+                        key: LLM_API_KEY
+                resources:
+                  limits:
+                    cpu: "2"
+                    memory: "4Gi"
+                  requests:
+                    cpu: "1"
+                    memory: "2Gi"
+                volumeMounts:
+                  - mountPath: /dev/shm
+                    name: dshm
+            volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+                  sizeLimit: 2Gi
